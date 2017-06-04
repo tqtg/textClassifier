@@ -1,41 +1,38 @@
-# author - Richard Liao
-# Dec 26 2016
 import numpy as np
 import pandas as pd
-import _pickle as cPickle
-from collections import defaultdict
 import re
 
 from bs4 import BeautifulSoup
 
-import sys
 import os
-
-os.environ['KERAS_BACKEND']='tensorflow'
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils.np_utils import to_categorical
 
-from keras.layers import Embedding
 from keras.layers import Dense, Input, Flatten
-from keras.layers import Conv1D, MaxPooling1D, Embedding, Merge, Dropout
+from keras.layers import Conv1D, MaxPooling1D, Embedding, Concatenate, Dropout
 from keras.models import Model
 
-MAX_SEQUENCE_LENGTH = 1000
+MAX_SEQUENCE_LENGTH = 400
 MAX_NB_WORDS = 20000
 EMBEDDING_DIM = 100
 VALIDATION_SPLIT = 0.2
+
+BATCH_SIZE = 64
+NUM_EPOCHS = 20
+
 
 def clean_str(string):
     """
     Tokenization/string cleaning for dataset
     Every dataset is lower cased except
     """
-    string = re.sub(r"\\", "", string)    
-    string = re.sub(r"\'", "", string)    
-    string = re.sub(r"\"", "", string)    
+    string = re.sub(r"\\", "", string)
+    string = re.sub(r"\'", "", string)
+    string = re.sub(r"\"", "", string)
     return string.strip().lower()
+
 
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
 print(data_train.shape)
@@ -45,9 +42,8 @@ labels = []
 
 for idx in range(data_train.review.shape[0]):
     text = BeautifulSoup(data_train.review[idx], "html.parser")
-    texts.append(clean_str(text.get_text().encode('ascii','ignore').decode('utf-8')))
+    texts.append(clean_str(text.get_text().encode('ascii', 'ignore').decode('utf-8')))
     labels.append(data_train.sentiment[idx])
-    
 
 tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
 tokenizer.fit_on_texts(texts)
@@ -57,10 +53,9 @@ word_index = tokenizer.word_index
 print('Found %s unique tokens.' % len(word_index))
 
 data = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
-
 labels = to_categorical(np.asarray(labels))
 print('Shape of data tensor:', data.shape)
-print('Shape of label tensor:', labels.shape)
+print('Shape of label tensor:', len(labels))
 
 indices = np.arange(data.shape[0])
 np.random.shuffle(indices)
@@ -95,64 +90,39 @@ for word, i in word_index.items():
     if embedding_vector is not None:
         # words not found in embedding index will be all-zeros.
         embedding_matrix[i] = embedding_vector
-        
+
 embedding_layer = Embedding(len(word_index) + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
                             input_length=MAX_SEQUENCE_LENGTH,
                             trainable=True)
 
-# simple approach
-# sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
-# embedded_sequences = embedding_layer(sequence_input)
-# l_cov1= Conv1D(128, 5, activation='relu')(embedded_sequences)
-# l_pool1 = MaxPooling1D(5)(l_cov1)
-# l_cov2 = Conv1D(128, 5, activation='relu')(l_pool1)
-# l_pool2 = MaxPooling1D(5)(l_cov2)
-# l_cov3 = Conv1D(128, 5, activation='relu')(l_pool2)
-# l_pool3 = MaxPooling1D(35)(l_cov3)  # global max pooling
-# l_flat = Flatten()(l_pool3)
-# l_dense = Dense(128, activation='relu')(l_flat)
-# preds = Dense(2, activation='softmax')(l_dense)
-#
-# model = Model(sequence_input, preds)
-# model.compile(loss='categorical_crossentropy',
-#               optimizer='adam',
-#               metrics=['acc'])
-#
-# print("model fitting - simplified convolutional neural network")
-# model.summary()
-# model.fit(x_train, y_train, validation_data=(x_val, y_val),
-#           epochs=10, batch_size=128)
-
-
-# applying a more complex convolutional approach
 convs = []
-filter_sizes = [3,4,5]
+filter_sizes = [3, 4, 5]
+num_filters = 128
+dropout = 0.5
 
 sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
 embedded_sequences = embedding_layer(sequence_input)
 
 for fsz in filter_sizes:
-    l_conv = Conv1D(nb_filter=128,filter_length=fsz,activation='relu')(embedded_sequences)
-    l_pool = MaxPooling1D(5)(l_conv)
+    l_conv = Conv1D(filters=128,
+                    kernel_size=fsz,
+                    activation='relu')(embedded_sequences)
+    l_pool = MaxPooling1D(pool_size=(MAX_SEQUENCE_LENGTH - fsz + 1))(l_conv)
     convs.append(l_pool)
-    
-l_merge = Merge(mode='concat', concat_axis=1)(convs)
-l_cov1= Conv1D(128, 5, activation='relu')(l_merge)
-l_pool1 = MaxPooling1D(5)(l_cov1)
-l_cov2 = Conv1D(128, 5, activation='relu')(l_pool1)
-l_pool2 = MaxPooling1D(30)(l_cov2)
-l_flat = Flatten()(l_pool2)
-l_dense = Dense(128, activation='relu')(l_flat)
-preds = Dense(2, activation='softmax')(l_dense)
+
+l_concat = Concatenate(axis=1)(convs)
+l_flat = Flatten()(l_concat)
+l_dropout = Dropout(dropout)(l_flat)
+preds = Dense(2, activation='softmax')(l_dropout)
 
 model = Model(sequence_input, preds)
-model.compile(loss='categorical_crossentropy',
+model.compile(loss='binary_crossentropy',
               optimizer='adam',
-              metrics=['acc'])
+              metrics=['accuracy'])
 
 print("model fitting - more complex convolutional neural network")
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val),
-          epochs=20, batch_size=50)
+          epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
