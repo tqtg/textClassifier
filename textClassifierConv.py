@@ -2,7 +2,7 @@
 # Dec 26 2016
 import numpy as np
 import pandas as pd
-import cPickle
+import _pickle as cPickle
 from collections import defaultdict
 import re
 
@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 import sys
 import os
 
-os.environ['KERAS_BACKEND']='theano'
+os.environ['KERAS_BACKEND']='tensorflow'
 
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
@@ -37,19 +37,19 @@ def clean_str(string):
     string = re.sub(r"\"", "", string)    
     return string.strip().lower()
 
-data_train = pd.read_csv('~/Testground/data/imdb/labeledTrainData.tsv', sep='\t')
-print data_train.shape
+data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
+print(data_train.shape)
 
 texts = []
 labels = []
 
 for idx in range(data_train.review.shape[0]):
-    text = BeautifulSoup(data_train.review[idx])
-    texts.append(clean_str(text.get_text().encode('ascii','ignore')))
+    text = BeautifulSoup(data_train.review[idx], "html.parser")
+    texts.append(clean_str(text.get_text().encode('ascii','ignore').decode('utf-8')))
     labels.append(data_train.sentiment[idx])
     
 
-tokenizer = Tokenizer(nb_words=MAX_NB_WORDS)
+tokenizer = Tokenizer(num_words=MAX_NB_WORDS)
 tokenizer.fit_on_texts(texts)
 sequences = tokenizer.texts_to_sequences(texts)
 
@@ -74,12 +74,12 @@ x_val = data[-nb_validation_samples:]
 y_val = labels[-nb_validation_samples:]
 
 print('Number of positive and negative reviews in traing and validation set ')
-print y_train.sum(axis=0)
-print y_val.sum(axis=0)
+print(y_train.sum(axis=0))
+print(y_val.sum(axis=0))
 
-GLOVE_DIR = "/ext/home/analyst/Testground/data/glove"
+GLOVE_DIR = "embedding/glove"
 embeddings_index = {}
-f = open(os.path.join(GLOVE_DIR, 'glove.6B.100d.txt'))
+f = open(os.path.join(GLOVE_DIR, 'glove.6B.100d.txt'), encoding='utf-8')
 for line in f:
     values = line.split()
     word = values[0]
@@ -102,40 +102,29 @@ embedding_layer = Embedding(len(word_index) + 1,
                             input_length=MAX_SEQUENCE_LENGTH,
                             trainable=True)
 
-sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
-embedded_sequences = embedding_layer(sequence_input)
-l_cov1= Conv1D(128, 5, activation='relu')(embedded_sequences)
-l_pool1 = MaxPooling1D(5)(l_cov1)
-l_cov2 = Conv1D(128, 5, activation='relu')(l_pool1)
-l_pool2 = MaxPooling1D(5)(l_cov2)
-l_cov3 = Conv1D(128, 5, activation='relu')(l_pool2)
-l_pool3 = MaxPooling1D(35)(l_cov3)  # global max pooling
-l_flat = Flatten()(l_pool3)
-l_dense = Dense(128, activation='relu')(l_flat)
-preds = Dense(2, activation='softmax')(l_dense)
+# simple approach
+# sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
+# embedded_sequences = embedding_layer(sequence_input)
+# l_cov1= Conv1D(128, 5, activation='relu')(embedded_sequences)
+# l_pool1 = MaxPooling1D(5)(l_cov1)
+# l_cov2 = Conv1D(128, 5, activation='relu')(l_pool1)
+# l_pool2 = MaxPooling1D(5)(l_cov2)
+# l_cov3 = Conv1D(128, 5, activation='relu')(l_pool2)
+# l_pool3 = MaxPooling1D(35)(l_cov3)  # global max pooling
+# l_flat = Flatten()(l_pool3)
+# l_dense = Dense(128, activation='relu')(l_flat)
+# preds = Dense(2, activation='softmax')(l_dense)
+#
+# model = Model(sequence_input, preds)
+# model.compile(loss='categorical_crossentropy',
+#               optimizer='adam',
+#               metrics=['acc'])
+#
+# print("model fitting - simplified convolutional neural network")
+# model.summary()
+# model.fit(x_train, y_train, validation_data=(x_val, y_val),
+#           epochs=10, batch_size=128)
 
-model = Model(sequence_input, preds)
-model.compile(loss='categorical_crossentropy',
-              optimizer='rmsprop',
-              metrics=['acc'])
-
-print("model fitting - simplified convolutional neural network")
-model.summary()
-model.fit(x_train, y_train, validation_data=(x_val, y_val),
-          nb_epoch=10, batch_size=128)
-
-embedding_matrix = np.random.random((len(word_index) + 1, EMBEDDING_DIM))
-for word, i in word_index.items():
-    embedding_vector = embeddings_index.get(word)
-    if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
-        embedding_matrix[i] = embedding_vector
-        
-embedding_layer = Embedding(len(word_index) + 1,
-                            EMBEDDING_DIM,
-                            weights=[embedding_matrix],
-                            input_length=MAX_SEQUENCE_LENGTH,
-                            trainable=True)
 
 # applying a more complex convolutional approach
 convs = []
@@ -160,10 +149,10 @@ preds = Dense(2, activation='softmax')(l_dense)
 
 model = Model(sequence_input, preds)
 model.compile(loss='categorical_crossentropy',
-              optimizer='rmsprop',
+              optimizer='adam',
               metrics=['acc'])
 
 print("model fitting - more complex convolutional neural network")
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val),
-          nb_epoch=20, batch_size=50)
+          epochs=20, batch_size=50)
