@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import sys
 import os
 
 os.environ['KERAS_BACKEND']='tensorflow'
@@ -9,9 +8,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils.np_utils import to_categorical
 from keras.models import Model
-from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, merge, Permute, Reshape
-
-from keras import backend as K
+from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot
 
 import preprocessor
 
@@ -26,18 +23,18 @@ NUM_EPOCHS = 10
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
 print(data_train.shape)
 
-x_train = preprocessor.clean(data_train.review)
-y_train = to_categorical(data_train.sentiment)
+texts = preprocessor.clean(data_train.review)
+labels = to_categorical(data_train.sentiment)
 
 # Tokenize data and map token to unique id
 tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
-tokenizer.fit_on_texts(x_train)
-x_train = tokenizer.texts_to_sequences(x_train)
+tokenizer.fit_on_texts(texts)
+x_train = tokenizer.texts_to_sequences(texts)
 x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
 word_index = tokenizer.word_index
 print('Found %d unique tokens.' % len(word_index))
 
-x_train, y_train, x_val, y_val = preprocessor.train_val_split(x_train, y_train, VALIDATION_RATIO)
+x_train, y_train, x_val, y_val = preprocessor.train_val_split(x_train, labels, VALIDATION_RATIO)
 
 print('Number of positive and negative reviews in training and validation set ')
 print(y_train.sum(axis=0))
@@ -57,7 +54,7 @@ embedding_layer = Embedding(len(word_index) + 1,
                             input_length=MAX_SEQ_LENGTH,
                             trainable=True)
 
-# Construct model
+# Hyper parameters
 hidden_dim = 50
 dropout = 0.5
 
@@ -83,20 +80,15 @@ l_dropout1 = Dropout(dropout)(embedded_sequences)
 
 # ================================ One-level attention RNN (GRU) ================================
 
-def get_weighted_sum(X):
-    h, alpha = X[0], X[1]
-    ans = K.batch_dot(h, alpha)
-    return ans
-
-h_word = Bidirectional(GRU(hidden_dim, return_sequences=True), name='Bidirect_GRU')(l_dropout1)
-
+h_word = Bidirectional(GRU(hidden_dim, return_sequences=True), name='h_word')(l_dropout1)
 u_word = TimeDistributed(Dense(2 * hidden_dim, activation='tanh'), name='u_word')(h_word)
+
 alpha_word = TimeDistributed(Dense(1, activation='linear'))(u_word)
 flat_alpha = Flatten()(alpha_word)
 alpha_word = Dense(MAX_SEQ_LENGTH, activation='softmax', name='alpha_word')(flat_alpha)
 
 h_word_trans = Permute((2, 1), name="h_word_trans")(h_word)
-h_word_combined = merge([h_word_trans, alpha_word], output_shape=(2 * hidden_dim, 1), name="h_word_combined", mode=get_weighted_sum)
+h_word_combined = Dot(axes=[2, 1])([h_word_trans, alpha_word])
 h_word_combined = Reshape((2 * hidden_dim,), name="reshape")(h_word_combined)
 
 l_classifier = Dense(2, activation='softmax')(h_word_combined)

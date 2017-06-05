@@ -15,7 +15,7 @@ import preprocessor
 
 MAX_SEQ_LENGTH = 1000
 MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 100
+EMBEDDING_DIM = 50
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
 NUM_EPOCHS = 10
@@ -24,18 +24,18 @@ NUM_EPOCHS = 10
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
 print(data_train.shape)
 
-x_train = preprocessor.clean(data_train.review)
-y_train = to_categorical(data_train.sentiment)
+texts = preprocessor.clean(data_train.review)
+labels = to_categorical(data_train.sentiment)
 
 # Tokenize data and map token to unique id
 tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
-tokenizer.fit_on_texts(x_train)
-x_train = tokenizer.texts_to_sequences(x_train)
+tokenizer.fit_on_texts(texts)
+x_train = tokenizer.texts_to_sequences(texts)
 x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
 word_index = tokenizer.word_index
 print('Found %d unique tokens.' % len(word_index))
 
-x_train, y_train, x_val, y_val = preprocessor.train_val_split(x_train, y_train, VALIDATION_RATIO)
+x_train, y_train, x_val, y_val = preprocessor.train_val_split(x_train, labels, VALIDATION_RATIO)
 
 print('Number of positive and negative reviews in training and validation set ')
 print(y_train.sum(axis=0))
@@ -55,8 +55,7 @@ embedding_layer = Embedding(len(word_index) + 1,
                             input_length=MAX_SEQ_LENGTH,
                             trainable=True)
 
-# Construct model
-conv_layers = []
+# Hyper parameters
 filter_sizes = [3, 4, 5]
 num_filters = 10
 bottleneck_dim = 128
@@ -66,6 +65,7 @@ sequence_input = Input(shape=(MAX_SEQ_LENGTH,), dtype='int32')
 embedded_sequences = embedding_layer(sequence_input)
 l_dropout1 = Dropout(dropout)(embedded_sequences)
 
+conv_layers = []
 for fsz in filter_sizes:
     l_conv = Convolution1D(filters=num_filters,
                            kernel_size=fsz,
