@@ -1,21 +1,23 @@
 import numpy as np
 import pandas as pd
+import sys
+import os
 
-import os, sys
 os.environ['KERAS_BACKEND']='tensorflow'
-os.environ['CUDA_VISIBLE_DEVICES']=sys.argv[1]
 
-from keras.utils.np_utils import to_categorical
-from keras.layers import Dense, Input, Flatten, Convolution1D, MaxPooling1D, Embedding, Concatenate, Dropout
-from keras.models import Model
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
+from keras.utils.np_utils import to_categorical
+from keras.models import Model
+from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, merge, Permute, Reshape
+
+from keras import backend as K
 
 import preprocessor
 
-MAX_SEQ_LENGTH = 1000
+MAX_SEQ_LENGTH = 400
 MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 100
+EMBEDDING_DIM = 50
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
 NUM_EPOCHS = 10
@@ -56,30 +58,48 @@ embedding_layer = Embedding(len(word_index) + 1,
                             trainable=True)
 
 # Construct model
-conv_layers = []
-filter_sizes = [3, 4, 5]
-num_filters = 10
-bottleneck_dim = 128
+hidden_dim = 50
 dropout = 0.5
 
 sequence_input = Input(shape=(MAX_SEQ_LENGTH,), dtype='int32')
-embedded_sequences = embedding_layer(sequence_input)
+embedded_sequences = (embedding_layer(sequence_input))
 l_dropout1 = Dropout(dropout)(embedded_sequences)
 
-for fsz in filter_sizes:
-    l_conv = Convolution1D(filters=num_filters,
-                           kernel_size=fsz,
-                           padding='valid',
-                           activation='relu')(l_dropout1)
-    l_pool = MaxPooling1D(pool_size=2)(l_conv)
-    conv_layers.append(l_pool)
+# ================================ Bidirectional LSTM model ================================
 
-l_concat = Concatenate(axis=1)(conv_layers)
-l_flat = Flatten()(l_concat)
-l_dropout2 = Dropout(dropout)(l_flat)
-l_bottleneck = Dense(bottleneck_dim, activation='relu')(l_dropout2)
-l_dropout3 = Dropout(dropout)(l_bottleneck)
-l_classifier = Dense(2, activation='softmax')(l_dropout3)
+# l_lstm = Bidirectional(LSTM(hidden_dim))(l_dropout1)
+# l_dropout2 = Dropout(dropout)(l_lstm)
+# l_classifier = Dense(2, activation='softmax')(l_dropout2)
+# model = Model(sequence_input, l_classifier)
+#
+# model.compile(loss='binary_crossentropy',
+#               optimizer='adam',
+#               metrics=['accuracy'])
+#
+# # Train model
+# model.summary()
+# model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
+
+
+# ================================ One-level attention RNN (GRU) ================================
+
+def get_weighted_sum(X):
+    h, alpha = X[0], X[1]
+    ans = K.batch_dot(h, alpha)
+    return ans
+
+h_word = Bidirectional(GRU(hidden_dim, return_sequences=True), name='Bidirect_GRU')(l_dropout1)
+
+u_word = TimeDistributed(Dense(2 * hidden_dim, activation='tanh'), name='u_word')(h_word)
+alpha_word = TimeDistributed(Dense(1, activation='linear'))(u_word)
+flat_alpha = Flatten()(alpha_word)
+alpha_word = Dense(MAX_SEQ_LENGTH, activation='softmax', name='alpha_word')(flat_alpha)
+
+h_word_trans = Permute((2, 1), name="h_word_trans")(h_word)
+h_word_combined = merge([h_word_trans, alpha_word], output_shape=(2 * hidden_dim, 1), name="h_word_combined", mode=get_weighted_sum)
+h_word_combined = Reshape((2 * hidden_dim,), name="reshape")(h_word_combined)
+
+l_classifier = Dense(2, activation='softmax')(h_word_combined)
 
 model = Model(sequence_input, l_classifier)
 model.compile(loss='binary_crossentropy',
@@ -89,17 +109,3 @@ model.compile(loss='binary_crossentropy',
 # Train model
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
-
-# Test data for submission
-data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
-x_test = preprocessor.clean(data_test.review)
-x_test = tokenizer.texts_to_sequences(x_test)
-x_test = pad_sequences(x_test, maxlen=MAX_SEQ_LENGTH)
-labels = model.predict(x_test)
-
-submission = open('data/imdb/submission.csv', 'w')
-submission.write('"id","sentiment"\n')
-for i in range(len(x_test)):
-    _id = data_test.id[i]
-    label = np.argmax(labels[i])
-    submission.write('"%s",%d\n' % (_id, label))
