@@ -8,16 +8,16 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils.np_utils import to_categorical
 from keras.models import Model
-from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot
+from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot, Activation
 
 import preprocessor
 
-MAX_SEQ_LENGTH = 400
-MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 50
+MAX_SEQ_LENGTH = 1000
+VOCABULARY_SIZE = 20000
+EMBEDDING_DIM = 100
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 
 # Load data
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
@@ -27,7 +27,7 @@ texts = preprocessor.clean(data_train.review)
 labels = to_categorical(data_train.sentiment)
 
 # Tokenize data and map token to unique id
-tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
+tokenizer = Tokenizer(num_words=VOCABULARY_SIZE)
 tokenizer.fit_on_texts(texts)
 x_train = tokenizer.texts_to_sequences(texts)
 x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
@@ -81,17 +81,20 @@ l_dropout1 = Dropout(dropout)(embedded_sequences)
 # ================================ One-level attention RNN (GRU) ================================
 
 h_word = Bidirectional(GRU(hidden_dim, return_sequences=True), name='h_word')(l_dropout1)
+
+# from attention import Attention
+# h_word_combined = Attention(2 * hidden_dim, name='attention')(h_word)
+
+# Attention part
 u_word = TimeDistributed(Dense(2 * hidden_dim, activation='tanh'), name='u_word')(h_word)
+# \alpha weight for each word
+alpha_word = TimeDistributed(Dense(1, use_bias=False))(u_word)
+alpha_word = Reshape((MAX_SEQ_LENGTH,))(alpha_word)
+alpha_word = Activation('softmax')(alpha_word)
+# Combine word representation to form sentence representation w.r.t \alpha weights
+h_word_combined = Dot(axes=[1, 1])([h_word, alpha_word])
 
-alpha_word = TimeDistributed(Dense(1, activation='linear'))(u_word)
-flat_alpha = Flatten()(alpha_word)
-alpha_word = Dense(MAX_SEQ_LENGTH, activation='softmax', name='alpha_word')(flat_alpha)
-
-h_word_trans = Permute((2, 1), name="h_word_trans")(h_word)
-h_word_combined = Dot(axes=[2, 1])([h_word_trans, alpha_word])
-h_word_combined = Reshape((2 * hidden_dim,), name="reshape")(h_word_combined)
-
-l_classifier = Dense(2, activation='softmax')(h_word_combined)
+l_classifier = Dense(2, activation='softmax', name='classifier')(h_word_combined)
 
 model = Model(sequence_input, l_classifier)
 model.compile(loss='binary_crossentropy',
@@ -101,3 +104,17 @@ model.compile(loss='binary_crossentropy',
 # Train model
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
+
+# ================================ Kaggle imdb submission ================================
+data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
+x_test = preprocessor.clean(data_test.review)
+x_test = tokenizer.texts_to_sequences(x_test)
+x_test = pad_sequences(x_test, maxlen=MAX_SEQ_LENGTH)
+labels = model.predict(x_test)
+
+submission = open('data/imdb/submission.csv', 'w')
+submission.write('"id","sentiment"\n')
+for i in range(len(x_test)):
+    _id = data_test.id[i]
+    label = np.argmax(labels[i])
+    submission.write('"%s",%d\n' % (_id, label))

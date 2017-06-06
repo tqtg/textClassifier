@@ -14,11 +14,11 @@ from keras.preprocessing.sequence import pad_sequences
 import preprocessor
 
 MAX_SEQ_LENGTH = 1000
-MAX_NUM_WORDS = 20000
-EMBEDDING_DIM = 50
+VOCABULARY_SIZE = 20000
+EMBEDDING_DIM = 100
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 
 # Load data
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
@@ -28,7 +28,7 @@ texts = preprocessor.clean(data_train.review)
 labels = to_categorical(data_train.sentiment)
 
 # Tokenize data and map token to unique id
-tokenizer = Tokenizer(num_words=MAX_NUM_WORDS)
+tokenizer = Tokenizer(num_words=VOCABULARY_SIZE)
 tokenizer.fit_on_texts(texts)
 x_train = tokenizer.texts_to_sequences(texts)
 x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
@@ -90,7 +90,7 @@ model.compile(loss='binary_crossentropy',
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
 
-# Test data for submission
+# ================================ Kaggle imdb submission ================================
 data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
 x_test = preprocessor.clean(data_test.review)
 x_test = tokenizer.texts_to_sequences(x_test)
