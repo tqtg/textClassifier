@@ -23,34 +23,37 @@ BATCH_SIZE = 64
 NUM_EPOCHS = 20
 
 
-# Data pre-processing (Yelp)
+# Data pre-processing
 word_to_index = {}
 index_to_word = {}
-def preprocess_data(texts, is_training_data=False):
+unknown_token = "UNKNOWN_TOKEN"
+def build_vocab(texts):
     global word_to_index
     global index_to_word
-    unknown_token = "UNKNOWN_TOKEN"
 
-    # build vocabulary for training data
-    if is_training_data:
-        # Tokenize the data into sentences
-        sentences = itertools.chain(*[text.split('<sssss>') for text in texts])
+    # Tokenize the data into sentences
+    sentences = itertools.chain(*[text.split('<sssss>') for text in texts])
 
-        # Tokenize the sentences into words
-        tokenized_sentences = [nltk.word_tokenize(sent) for sent in sentences]
+    # Tokenize the sentences into words
+    tokenized_sentences = [nltk.word_tokenize(sent) for sent in sentences]
 
-        # Count the word frequencies
-        word_freq = nltk.FreqDist(itertools.chain(*tokenized_sentences))
-        print("Found %d unique words tokens." % len(word_freq.items()))
+    # Count the word frequencies
+    word_freq = nltk.FreqDist(itertools.chain(*tokenized_sentences))
+    print("Found %d unique words tokens." % len(word_freq.items()))
 
-        # Get the most common words and build index_to_word and word_to_index vectors
-        vocab = word_freq.most_common(VOCABULARY_SIZE - 1)
-        index_to_word = [x[0] for x in vocab]
-        index_to_word.append(unknown_token)
-        word_to_index = dict([(w, i) for i, w in enumerate(index_to_word)])
+    # Get the most common words and build index_to_word and word_to_index vectors
+    vocab = word_freq.most_common(VOCABULARY_SIZE - 1)
+    index_to_word = [x[0] for x in vocab]
+    index_to_word.append(unknown_token)
+    word_to_index = dict([(w, i) for i, w in enumerate(index_to_word)])
 
-        print("Using vocabulary size %d." % VOCABULARY_SIZE)
-        print("The least frequent word in our vocabulary is '%s' and appeared %d times." % (vocab[-1][0], vocab[-1][1]))
+    print("Using vocabulary size %d." % VOCABULARY_SIZE)
+    print("The least frequent word in our vocabulary is '%s' and appeared %d times." % (vocab[-1][0], vocab[-1][1]))
+
+
+def text2tensor(texts):
+    global word_to_index
+    global index_to_word
 
     documents = np.zeros((len(texts), MAX_NUM_SENTS, MAX_SENT_LENGTH), dtype='int32')
 
@@ -71,12 +74,13 @@ label_map = {1:0, 2:1, 3:2, 4:3, 5:4}
 
 data_train = pd.read_csv('data/emnlp-2015/yelp-2013-train.txt.ss', sep='\t', header=None, usecols=[4, 6])
 print(data_train.shape)
-x_train = preprocess_data(data_train[6], is_training_data=True)
+build_vocab(data_train[6])
+x_train = text2tensor(data_train[6])
 y_train = to_categorical(data_train[4].map(label_map))
 
 data_val = pd.read_csv('data/emnlp-2015/yelp-2013-test.txt.ss', sep='\t', header=None, usecols=[4, 6])
 print(data_val.shape)
-x_val = preprocess_data(data_val[6], is_training_data=False)
+x_val = text2tensor(data_val[6])
 y_val = to_categorical(data_val[4].map(label_map))
 
 print('Number of reviews per class in training and validation set ')
@@ -88,7 +92,6 @@ embedding_matrix = np.zeros((VOCABULARY_SIZE + 1, EMBEDDING_DIM))
 for word, i in word_to_index.items():
     embedding_vector = embedding_weights.get(word)
     if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
         embedding_matrix[i] = embedding_vector
 
 embedding_layer = Embedding(VOCABULARY_SIZE + 1,

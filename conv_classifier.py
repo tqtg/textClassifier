@@ -57,7 +57,7 @@ embedding_layer = Embedding(len(word_index) + 1,
 
 # Hyper parameters
 filter_sizes = [3, 4, 5]
-num_filters = 10
+num_filters = 50
 bottleneck_dim = 128
 dropout = 0.5
 

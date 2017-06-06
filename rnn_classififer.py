@@ -11,6 +11,8 @@ from keras.models import Model
 from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot, Activation
 
 import preprocessor
+import nltk
+import itertools
 
 MAX_SEQ_LENGTH = 1000
 VOCABULARY_SIZE = 20000
@@ -19,36 +21,71 @@ VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
 NUM_EPOCHS = 20
 
+
+# Data pre-processing
+word_to_index = {}
+index_to_word = {}
+unknown_token = "UNKNOWN_TOKEN"
+def build_vocab(texts):
+    global word_to_index
+    global index_to_word
+
+    # Tokenize the texts into words
+    words = [nltk.word_tokenize(text) for text in texts]
+
+    # Count the word frequencies
+    word_freq = nltk.FreqDist(itertools.chain(*words))
+    print("Found %d unique words tokens." % len(word_freq.items()))
+
+    # Get the most common words and build index_to_word and word_to_index vectors
+    vocab = word_freq.most_common(VOCABULARY_SIZE - 1)
+    index_to_word = [x[0] for x in vocab]
+    index_to_word.append(unknown_token)
+    word_to_index = dict([(w, i) for i, w in enumerate(index_to_word)])
+
+    print("Using vocabulary size %d." % VOCABULARY_SIZE)
+    print("The least frequent word in our vocabulary is '%s' and appeared %d times." % (vocab[-1][0], vocab[-1][1]))
+
+
+def text2matrix(texts):
+    global word_to_index
+    global index_to_word
+
+    documents = np.zeros((len(texts), MAX_SEQ_LENGTH), dtype='int32')
+
+    reviews = [nltk.word_tokenize(text) for text in texts]
+    # Replace all words not in our vocabulary with the unknown token
+    for i, review in enumerate(reviews):
+        reviews[i] = [w if w in word_to_index else unknown_token for w in review]
+        for j in range(MAX_SEQ_LENGTH):
+            if j < len(reviews[i]):
+                documents[i,j] = word_to_index[reviews[i][j]]
+    return documents
+
 # Load data
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
 print(data_train.shape)
 
 texts = preprocessor.clean(data_train.review)
+build_vocab(texts)
+
+documents = text2matrix(texts)
 labels = to_categorical(data_train.sentiment)
 
-# Tokenize data and map token to unique id
-tokenizer = Tokenizer(num_words=VOCABULARY_SIZE)
-tokenizer.fit_on_texts(texts)
-x_train = tokenizer.texts_to_sequences(texts)
-x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
-word_index = tokenizer.word_index
-print('Found %d unique tokens.' % len(word_index))
+x_train, y_train, x_val, y_val = preprocessor.train_val_split(documents, labels, VALIDATION_RATIO)
 
-x_train, y_train, x_val, y_val = preprocessor.train_val_split(x_train, labels, VALIDATION_RATIO)
-
-print('Number of positive and negative reviews in training and validation set ')
+print('Number of reviews per class in training and validation set ')
 print(y_train.sum(axis=0))
 print(y_val.sum(axis=0))
 
 embedding_weights = preprocessor.load_embedding(EMBEDDING_DIM)
-embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-for word, i in word_index.items():
+embedding_matrix = np.zeros((VOCABULARY_SIZE + 1, EMBEDDING_DIM))
+for word, i in word_to_index.items():
     embedding_vector = embedding_weights.get(word)
     if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
         embedding_matrix[i] = embedding_vector
 
-embedding_layer = Embedding(len(word_index) + 1,
+embedding_layer = Embedding(VOCABULARY_SIZE + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
                             input_length=MAX_SEQ_LENGTH,

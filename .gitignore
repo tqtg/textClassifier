@@ -1,3 +1,4 @@
 .idea/
-/data
-/embedding
+data/
+embedding/
+__pycache__/
