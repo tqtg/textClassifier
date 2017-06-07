@@ -129,6 +129,7 @@ h_sent_combined = Dot(axes=[1, 1], name='h_sent_combined')([h_sent, alpha_sent])
 # Classifier layer
 l_classifier = Dense(5, activation='softmax')(h_sent_combined)
 
+# Build model
 model = Model(review_input, l_classifier)
 model.compile(loss='categorical_crossentropy',
               optimizer='adam',

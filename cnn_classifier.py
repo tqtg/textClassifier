@@ -18,7 +18,7 @@ VOCABULARY_SIZE = 20000
 EMBEDDING_DIM = 100
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
-NUM_EPOCHS = 10
+NUM_EPOCHS = 20
 
 # Load data
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
@@ -31,7 +31,7 @@ labels = to_categorical(data_train.sentiment)
 tokenizer = Tokenizer(num_words=VOCABULARY_SIZE)
 tokenizer.fit_on_texts(texts)
 x_train = tokenizer.texts_to_sequences(texts)
-x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH)
+x_train = pad_sequences(x_train, maxlen=MAX_SEQ_LENGTH, padding='post')
 word_index = tokenizer.word_index
 print('Found %d unique tokens.' % len(word_index))
 
@@ -42,13 +42,14 @@ print(y_train.sum(axis=0))
 print(y_val.sum(axis=0))
 
 embedding_weights = preprocessor.load_embedding(EMBEDDING_DIM)
-embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
+embedding_matrix = np.zeros((VOCABULARY_SIZE + 1, EMBEDDING_DIM))
 for word, i in word_index.items():
+    if i > VOCABULARY_SIZE: continue
     embedding_vector = embedding_weights.get(word)
     if embedding_vector is not None:
         embedding_matrix[i] = embedding_vector
 
-embedding_layer = Embedding(len(word_index) + 1,
+embedding_layer = Embedding(VOCABULARY_SIZE + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
                             input_length=MAX_SEQ_LENGTH,
@@ -56,7 +57,7 @@ embedding_layer = Embedding(len(word_index) + 1,
 
 # Hyper parameters
 filter_sizes = [3, 4, 5]
-num_filters = 50
+num_filters = 10
 bottleneck_dim = 128
 dropout = 0.5
 
@@ -93,7 +94,7 @@ model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, b
 data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
 x_test = preprocessor.clean(data_test.review)
 x_test = tokenizer.texts_to_sequences(x_test)
-x_test = pad_sequences(x_test, maxlen=MAX_SEQ_LENGTH)
+x_test = pad_sequences(x_test, maxlen=MAX_SEQ_LENGTH, padding='post')
 labels = model.predict(x_test)
 
 submission = open('data/imdb/submission.csv', 'w')

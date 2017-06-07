@@ -6,7 +6,7 @@ os.environ['KERAS_BACKEND']='tensorflow'
 
 from keras.utils.np_utils import to_categorical
 from keras.models import Model
-from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot, Activation
+from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Reshape, Dot, Activation
 
 import preprocessor
 import nltk
@@ -87,21 +87,14 @@ l_dropout1 = Dropout(dropout)(embedded_sequences)
 
 # ================================ Bidirectional LSTM model ================================
 
+
 # l_lstm = Bidirectional(LSTM(hidden_dim))(l_dropout1)
 # l_dropout2 = Dropout(dropout)(l_lstm)
 # l_classifier = Dense(2, activation='softmax')(l_dropout2)
-# model = Model(sequence_input, l_classifier)
-#
-# model.compile(loss='binary_crossentropy',
-#               optimizer='adam',
-#               metrics=['accuracy'])
-#
-# # Train model
-# model.summary()
-# model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
 
 
 # ================================ One-level attention RNN (GRU) ================================
+
 
 h_word = Bidirectional(GRU(hidden_dim, return_sequences=True), name='h_word')(l_dropout1)
 
@@ -119,6 +112,9 @@ h_word_combined = Dot(axes=[1, 1])([h_word, alpha_word])
 
 l_classifier = Dense(2, activation='softmax', name='classifier')(h_word_combined)
 
+
+# ====================================================================================
+
 model = Model(sequence_input, l_classifier)
 model.compile(loss='binary_crossentropy',
               optimizer='adam',
@@ -128,7 +124,9 @@ model.compile(loss='binary_crossentropy',
 model.summary()
 model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, batch_size=BATCH_SIZE)
 
+
 # ================================ Kaggle imdb submission ================================
+
 data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
 x_test = texts_to_matrix(preprocessor.clean(data_test.review))
 labels = model.predict(x_test)
