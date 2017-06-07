@@ -18,7 +18,7 @@ VOCABULARY_SIZE = 20000
 EMBEDDING_DIM = 100
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
-NUM_EPOCHS = 20
+NUM_EPOCHS = 10
 
 # Load data
 data_train = pd.read_csv('data/imdb/labeledTrainData.tsv', sep='\t')
@@ -46,7 +46,6 @@ embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
 for word, i in word_index.items():
     embedding_vector = embedding_weights.get(word)
     if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
         embedding_matrix[i] = embedding_vector
 
 embedding_layer = Embedding(len(word_index) + 1,

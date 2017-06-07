@@ -4,8 +4,6 @@ import os
 
 os.environ['KERAS_BACKEND']='tensorflow'
 
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
 from keras.utils.np_utils import to_categorical
 from keras.models import Model
 from keras.layers import Dense, Input, Embedding, Dropout, LSTM, GRU, Bidirectional, TimeDistributed, Flatten, Permute, Reshape, Dot, Activation
@@ -19,44 +17,32 @@ VOCABULARY_SIZE = 20000
 EMBEDDING_DIM = 100
 VALIDATION_RATIO = 0.2
 BATCH_SIZE = 64
-NUM_EPOCHS = 20
+NUM_EPOCHS = 10
 
 
 # Data pre-processing
 word_to_index = {}
-index_to_word = {}
-unknown_token = "UNKNOWN_TOKEN"
 def build_vocab(texts):
     global word_to_index
-    global index_to_word
-
     # Tokenize the texts into words
     words = [nltk.word_tokenize(text) for text in texts]
-
     # Count the word frequencies
     word_freq = nltk.FreqDist(itertools.chain(*words))
     print("Found %d unique words tokens." % len(word_freq.items()))
-
     # Get the most common words and build index_to_word and word_to_index vectors
-    vocab = word_freq.most_common(VOCABULARY_SIZE - 1)
-    index_to_word = [x[0] for x in vocab]
-    index_to_word.append(unknown_token)
-    word_to_index = dict([(w, i) for i, w in enumerate(index_to_word)])
-
+    vocab = word_freq.most_common(VOCABULARY_SIZE)
+    # word index starts from 1, 0-index is reserved for padding
+    word_to_index = dict([(w[0], i+1) for i, w in enumerate(vocab)])
     print("Using vocabulary size %d." % VOCABULARY_SIZE)
     print("The least frequent word in our vocabulary is '%s' and appeared %d times." % (vocab[-1][0], vocab[-1][1]))
 
 
-def text2matrix(texts):
+def texts_to_matrix(texts):
     global word_to_index
-    global index_to_word
-
     documents = np.zeros((len(texts), MAX_SEQ_LENGTH), dtype='int32')
-
     reviews = [nltk.word_tokenize(text) for text in texts]
-    # Replace all words not in our vocabulary with the unknown token
     for i, review in enumerate(reviews):
-        reviews[i] = [w if w in word_to_index else unknown_token for w in review]
+        reviews[i] = [w for w in review if w in word_to_index]
         for j in range(MAX_SEQ_LENGTH):
             if j < len(reviews[i]):
                 documents[i,j] = word_to_index[reviews[i][j]]
@@ -69,7 +55,7 @@ print(data_train.shape)
 texts = preprocessor.clean(data_train.review)
 build_vocab(texts)
 
-documents = text2matrix(texts)
+documents = texts_to_matrix(texts)
 labels = to_categorical(data_train.sentiment)
 
 x_train, y_train, x_val, y_val = preprocessor.train_val_split(documents, labels, VALIDATION_RATIO)
@@ -144,9 +130,7 @@ model.fit(x_train, y_train, validation_data=(x_val, y_val), epochs=NUM_EPOCHS, b
 
 # ================================ Kaggle imdb submission ================================
 data_test = pd.read_csv('data/imdb/testData.tsv', sep='\t')
-x_test = preprocessor.clean(data_test.review)
-x_test = tokenizer.texts_to_sequences(x_test)
-x_test = pad_sequences(x_test, maxlen=MAX_SEQ_LENGTH)
+x_test = texts_to_matrix(preprocessor.clean(data_test.review))
 labels = model.predict(x_test)
 
 submission = open('data/imdb/submission.csv', 'w')

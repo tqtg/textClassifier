@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
-import os
+import os, sys
 
 os.environ['KERAS_BACKEND']='tensorflow'
-os.environ['CUDA_VISIBLE_DEVICES']='0'
+os.environ['CUDA_VISIBLE_DEVICES']=sys.argv[1]
 
 from keras.utils.np_utils import to_categorical
 from keras.layers import Embedding, Dropout, Reshape, GRU, Bidirectional, TimeDistributed, Dot, Activation, Dense, Input
@@ -25,44 +25,34 @@ NUM_EPOCHS = 20
 
 # Data pre-processing
 word_to_index = {}
-index_to_word = {}
-unknown_token = "UNKNOWN_TOKEN"
 def build_vocab(texts):
     global word_to_index
-    global index_to_word
 
     # Tokenize the data into sentences
     sentences = itertools.chain(*[text.split('<sssss>') for text in texts])
-
     # Tokenize the sentences into words
     tokenized_sentences = [nltk.word_tokenize(sent) for sent in sentences]
 
     # Count the word frequencies
     word_freq = nltk.FreqDist(itertools.chain(*tokenized_sentences))
     print("Found %d unique words tokens." % len(word_freq.items()))
-
     # Get the most common words and build index_to_word and word_to_index vectors
-    vocab = word_freq.most_common(VOCABULARY_SIZE - 1)
-    index_to_word = [x[0] for x in vocab]
-    index_to_word.append(unknown_token)
-    word_to_index = dict([(w, i) for i, w in enumerate(index_to_word)])
+    vocab = word_freq.most_common(VOCABULARY_SIZE)
+    # word index starts from 1, 0-index is reserved for padding
+    word_to_index = dict([(w[0], i+1) for i, w in enumerate(vocab)])
 
     print("Using vocabulary size %d." % VOCABULARY_SIZE)
     print("The least frequent word in our vocabulary is '%s' and appeared %d times." % (vocab[-1][0], vocab[-1][1]))
 
 
-def text2tensor(texts):
+def texts_to_tensor(texts):
     global word_to_index
-    global index_to_word
-
     documents = np.zeros((len(texts), MAX_NUM_SENTS, MAX_SENT_LENGTH), dtype='int32')
-
     reviews = [text.split('<sssss>') for text in texts]
-    # Replace all words not in our vocabulary with the unknown token
     for i, review in enumerate(reviews):
         for j, sent in enumerate(review):
             if (j >= MAX_NUM_SENTS): continue
-            review[j] = [w if w in word_to_index else unknown_token for w in sent]
+            review[j] = [w for w in sent if w in word_to_index]
             for k in range(MAX_SENT_LENGTH):
                 if k < len(review[j]):
                     documents[i,j,k] = word_to_index[review[j][k]]
@@ -75,12 +65,12 @@ label_map = {1:0, 2:1, 3:2, 4:3, 5:4}
 data_train = pd.read_csv('data/emnlp-2015/yelp-2013-train.txt.ss', sep='\t', header=None, usecols=[4, 6])
 print(data_train.shape)
 build_vocab(data_train[6])
-x_train = text2tensor(data_train[6])
+x_train = texts_to_tensor(data_train[6])
 y_train = to_categorical(data_train[4].map(label_map))
 
 data_val = pd.read_csv('data/emnlp-2015/yelp-2013-test.txt.ss', sep='\t', header=None, usecols=[4, 6])
 print(data_val.shape)
-x_val = text2tensor(data_val[6])
+x_val = texts_to_tensor(data_val[6])
 y_val = to_categorical(data_val[4].map(label_map))
 
 print('Number of reviews per class in training and validation set ')
